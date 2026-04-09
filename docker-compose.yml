@@ -57,7 +57,7 @@ services:
         VITE_API_URL: /api
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-3000}:80"
+      - "${APP_PORT:-3000}:3333"
     depends_on:
       - server
     networks:
