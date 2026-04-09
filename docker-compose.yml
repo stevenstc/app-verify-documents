@@ -1,6 +1,7 @@
 services:
   # MongoDB database
   mongodb:
+    container_name: mongodb
     image: mongo:7.0
     restart: unless-stopped
     environment:
@@ -20,6 +21,7 @@ services:
 
   # Node.js backend API
   server:
+    container_name: server
     build:
       context: ./server
       dockerfile: Dockerfile
@@ -35,8 +37,7 @@ services:
       MONTHLY_SUBSCRIPTION_BTT: ${MONTHLY_SUBSCRIPTION_BTT:-1000}
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
     depends_on:
-      mongodb:
-        condition: service_healthy
+      - mongodb
     networks:
       - app-network
     healthcheck:
@@ -48,6 +49,7 @@ services:
 
   # React frontend served by nginx (also proxies /api to server)
   client:
+    container_name: client
     build:
       context: ./client
       dockerfile: Dockerfile
@@ -57,8 +59,7 @@ services:
     ports:
       - "${APP_PORT:-3000}:80"
     depends_on:
-      server:
-        condition: service_healthy
+      - server
     networks:
       - app-network
 
