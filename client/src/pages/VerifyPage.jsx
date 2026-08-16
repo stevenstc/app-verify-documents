@@ -184,12 +184,12 @@ const VerifyPage = () => {
                 {/* Results */}
                 {result && (
                     <div className="result-card card">
-                        {result.verified ? (
+                        {result.verified && result.verificationLevel === 'blockchain' ? (
                             <>
                                 <div className="result-header success">
                                     <CheckCircle size={60} />
-                                    <h2>✓ Documento Verificado</h2>
-                                    <p>Este documento está registrado en la blockchain</p>
+                                    <h2>✓ Verificación Blockchain</h2>
+                                    <p>Documento registrado en la blockchain de BTTChain — Nivel alto</p>
                                 </div>
 
                                 <div className="result-details">
@@ -213,40 +213,76 @@ const VerifyPage = () => {
                                         <span>{new Date(result.document.createdAt).toLocaleString()}</span>
                                     </div>
 
-                                    {result.document.storedInBlockchain && (
-                                        <>
-                                            <div className="detail-row">
-                                                <strong>Estado Blockchain:</strong>
-                                                <span className="badge badge-success">En Blockchain</span>
-                                            </div>
+                                    <div className="detail-row">
+                                        <strong>Estado Blockchain:</strong>
+                                        <span className="badge badge-success">En Blockchain</span>
+                                    </div>
 
-                                            <div className="detail-row">
-                                                <strong>Transaction Hash:</strong>
-                                                <a
-                                                    href={`https://bttcscan.com/tx/${result.document.blockchainTxHash}`}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="blockchain-link"
-                                                >
-                                                    {formatHash(result.document.blockchainTxHash)}
-                                                </a>
-                                            </div>
+                                    <div className="detail-row">
+                                        <strong>Transaction Hash:</strong>
+                                        <a
+                                            href={`https://bttcscan.com/tx/${result.document.blockchainTxHash}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="blockchain-link"
+                                        >
+                                            {formatHash(result.document.blockchainTxHash)}
+                                        </a>
+                                    </div>
 
-                                            <div className="detail-row">
-                                                <strong>Bloque:</strong>
-                                                <span>#{result.document.blockNumber}</span>
-                                            </div>
-                                        </>
-                                    )}
+                                    <div className="detail-row">
+                                        <strong>Bloque:</strong>
+                                        <span>#{result.document.blockNumber}</span>
+                                    </div>
 
                                     {result.blockchain && result.blockchain.exists && (
-                                        <>
-                                            <div className="detail-row">
-                                                <strong>Timestamp Blockchain:</strong>
-                                                <span>{new Date(result.blockchain.timestamp).toLocaleString()}</span>
-                                            </div>
-                                        </>
+                                        <div className="detail-row">
+                                            <strong>Timestamp Blockchain:</strong>
+                                            <span>{new Date(result.blockchain.timestamp).toLocaleString()}</span>
+                                        </div>
                                     )}
+                                </div>
+                            </>
+                        ) : result.verified && result.verificationLevel === 'database' ? (
+                            <>
+                                <div className="result-header warning">
+                                    <CheckCircle size={60} />
+                                    <h2>✓ Verificación en Plataforma</h2>
+                                    <p>Documento registrado en la base de datos — Nivel bajo</p>
+                                </div>
+
+                                <div className="result-details">
+                                    <div className="detail-row">
+                                        <strong>Nombre del Archivo:</strong>
+                                        <span>{result.document.fileName}</span>
+                                    </div>
+
+                                    <div className="detail-row">
+                                        <strong>Hash SHA-256:</strong>
+                                        <span className="hash-value">{result.document.fileHash}</span>
+                                    </div>
+
+                                    <div className="detail-row">
+                                        <strong>Propietario:</strong>
+                                        <span className="hash-value">{result.document.owner}</span>
+                                    </div>
+
+                                    <div className="detail-row">
+                                        <strong>Fecha de Registro:</strong>
+                                        <span>{new Date(result.document.createdAt).toLocaleString()}</span>
+                                    </div>
+
+                                    <div className="detail-row">
+                                        <strong>Estado Blockchain:</strong>
+                                        <span className="badge badge-warning">Solo en Plataforma</span>
+                                    </div>
+
+                                    <div className="detail-row info">
+                                        <span>
+                                            Este documento existe en la base de datos, pero aún no está certificado en la blockchain.
+                                            Para obtener una verificación de nivel alto, el propietario debe almacenarlo en blockchain.
+                                        </span>
+                                    </div>
                                 </div>
                             </>
                         ) : (
@@ -393,6 +429,11 @@ const VerifyPage = () => {
           color: #065f46;
         }
 
+        .result-header.warning {
+          background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+          color: #92400e;
+        }
+
         .result-header.error {
           background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
           color: #991b1b;
@@ -436,6 +477,16 @@ const VerifyPage = () => {
           word-break: break-all;
         }
 
+        .detail-row.info {
+          background: #eff6ff;
+          color: #1e40af;
+          border: 1px solid #bfdbfe;
+        }
+
+        .detail-row.info span {
+          text-align: left;
+        }
+
         .hash-value {
           font-family: monospace;
           font-size: 13px;
@@ -450,6 +501,23 @@ const VerifyPage = () => {
 
         .blockchain-link:hover {
           text-decoration: underline;
+        }
+
+        .badge {
+          padding: 4px 12px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .badge-success {
+          background: #d1fae5;
+          color: #065f46;
+        }
+
+        .badge-warning {
+          background: #fef3c7;
+          color: #92400e;
         }
 
         .info-section {

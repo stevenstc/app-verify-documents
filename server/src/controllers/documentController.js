@@ -168,17 +168,16 @@ export const verifyDocument = async (req, res) => {
     try {
         const { hash } = req.params;
 
-        // Buscar en base de datos
         const document = await Document.findOne({ fileHash: hash });
 
         if (!document) {
             return res.status(404).json({
                 verified: false,
+                verificationLevel: 'none',
                 message: 'Documento no encontrado en la base de datos'
             });
         }
 
-        // Verificar en blockchain si está almacenado
         let blockchainInfo = null;
         if (document.storedInBlockchain) {
             try {
@@ -188,8 +187,11 @@ export const verifyDocument = async (req, res) => {
             }
         }
 
+        const verificationLevel = document.storedInBlockchain ? 'blockchain' : 'database';
+
         res.json({
             verified: true,
+            verificationLevel,
             document: {
                 fileName: document.fileName,
                 fileHash: document.fileHash,
@@ -250,20 +252,17 @@ export const verifyUploadedFile = async (req, res) => {
             return res.status(400).json({ error: 'No se proporcionó ningún archivo' });
         }
 
-        // Calcular hash del archivo subido
         const fileHash = calculateBufferHash(file.buffer);
-
-        // Buscar documento con ese hash
         const document = await Document.findOne({ fileHash });
 
         if (!document) {
             return res.json({
                 verified: false,
+                verificationLevel: 'none',
                 message: 'Este archivo no está registrado en el sistema'
             });
         }
 
-        // Verificar en blockchain si está disponible
         let blockchainInfo = null;
         if (document.storedInBlockchain) {
             try {
@@ -273,8 +272,11 @@ export const verifyUploadedFile = async (req, res) => {
             }
         }
 
+        const verificationLevel = document.storedInBlockchain ? 'blockchain' : 'database';
+
         res.json({
             verified: true,
+            verificationLevel,
             message: 'Archivo verificado exitosamente',
             document: {
                 fileName: document.fileName,

@@ -46,8 +46,24 @@ export const formatHash = (hash, length = 8) => {
  */
 export const copyToClipboard = async (text) => {
     try {
-        await navigator.clipboard.writeText(text);
-        return true;
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+
+        return successful;
     } catch (err) {
         console.error('Error copiando al portapapeles:', err);
         return false;

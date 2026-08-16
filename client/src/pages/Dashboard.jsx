@@ -23,6 +23,7 @@ const Dashboard = () => {
     const [balance, setBalance] = useState('0');
     const [message, setMessage] = useState({ type: '', text: '' });
     const [userLimits, setUserLimits] = useState(null);
+    const [copiedHash, setCopiedHash] = useState(null);
 
     useEffect(() => {
         if (isConnected && account) {
@@ -51,6 +52,14 @@ const Dashboard = () => {
             setUserLimits(limits);
         } catch (error) {
             console.error('Error cargando datos:', error);
+        }
+    };
+
+    const handleCopyHash = async (hash) => {
+        const success = await copyToClipboard(hash);
+        if (success) {
+            setCopiedHash(hash);
+            setTimeout(() => setCopiedHash(null), 2000);
         }
     };
 
@@ -225,7 +234,7 @@ const Dashboard = () => {
                                 <Wallet size={20} />
                                 <span>{Number(balance).toFixed(2)} BTT</span>
                             </div>
-                            <button onClick={disconnectWallet} className="btn btn-outline btn-sm">
+                            <button onClick={disconnectWallet} className="btn btn-outline-danger btn-sm">
                                 <LogOut size={18} />
                                 Desconectar
                             </button>
@@ -367,7 +376,25 @@ const Dashboard = () => {
                                         </div>
 
                                         <div className="document-info">
-                                            <p><strong>Hash:</strong> {formatHash(doc.fileHash)}</p>
+                                            <p>
+                                                <strong>Hash:</strong>
+                                                <span className="hash-row">
+                                                    <span
+                                                        className="hash-text"
+                                                        title={doc.fileHash}
+                                                        onMouseUp={() => handleCopyHash(doc.fileHash)}
+                                                    >
+                                                        {formatHash(doc.fileHash, 16)}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => handleCopyHash(doc.fileHash)}
+                                                        className="copy-btn"
+                                                        title="Copiar hash completo"
+                                                    >
+                                                        {copiedHash === doc.fileHash ? '✓' : '📋'}
+                                                    </button>
+                                                </span>
+                                            </p>
                                             <p><strong>Tamaño:</strong> {(doc.fileSize / 1024).toFixed(2)} KB</p>
                                             <p><strong>Fecha:</strong> {new Date(doc.createdAt).toLocaleDateString()}</p>
 
@@ -378,13 +405,30 @@ const Dashboard = () => {
                                             {doc.blockchainTxHash && (
                                                 <p>
                                                     <strong>TX Hash:</strong>
-                                                    <a
-                                                        href={`https://bttcscan.com/tx/${doc.blockchainTxHash}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                    >
-                                                        {formatHash(doc.blockchainTxHash)}
-                                                    </a>
+                                                    <span className="hash-row">
+                                                        <span
+                                                            className="hash-text"
+                                                            title={doc.blockchainTxHash}
+                                                            onMouseUp={() => handleCopyHash(doc.blockchainTxHash)}
+                                                        >
+                                                            {formatHash(doc.blockchainTxHash, 16)}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => handleCopyHash(doc.blockchainTxHash)}
+                                                            className="copy-btn"
+                                                            title="Copiar hash completo"
+                                                        >
+                                                            {copiedHash === doc.blockchainTxHash ? '✓' : '📋'}
+                                                        </button>
+                                                        <a
+                                                            href={`https://bttcscan.com/tx/${doc.blockchainTxHash}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="tx-link"
+                                                        >
+                                                            Ver en BTTCScan
+                                                        </a>
+                                                    </span>
                                                 </p>
                                             )}
                                         </div>
@@ -585,6 +629,54 @@ const Dashboard = () => {
         .btn-sm {
           padding: 8px 16px;
           font-size: 14px;
+        }
+
+        .hash-text {
+          font-family: monospace;
+          background: var(--light);
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-size: 13px;
+          user-select: text;
+          word-break: break-all;
+          flex: 1;
+          min-width: 0;
+          cursor: text;
+        }
+
+        .hash-row {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          width: 100%;
+        }
+
+        .copy-btn {
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 14px;
+          padding: 2px 6px;
+          border-radius: 4px;
+          transition: all 0.2s;
+          opacity: 0.7;
+        }
+
+        .copy-btn:hover {
+          opacity: 1;
+          background: var(--light);
+        }
+
+        .tx-link {
+          margin-left: 12px;
+          font-size: 12px;
+          color: var(--primary);
+          text-decoration: none;
+        }
+
+        .tx-link:hover {
+          text-decoration: underline;
         }
 
         @media (max-width: 768px) {
