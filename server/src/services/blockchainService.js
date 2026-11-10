@@ -5,6 +5,7 @@ class BlockchainService {
         this.provider = null;
         this.contract = null;
         this.wallet = null;
+        this.serviceWallet = null;
     }
 
     /**
@@ -19,6 +20,9 @@ class BlockchainService {
             if (process.env.BTTC_PRIVATE_KEY) {
                 this.wallet = new ethers.Wallet(process.env.BTTC_PRIVATE_KEY, this.provider);
             }
+
+            // Cuenta que recibe los pagos de suscripción (default: wallet del servidor)
+            this.serviceWallet = process.env.BTTC_SERVICE_WALLET || this.wallet?.address || null;
 
             // Cargar el contrato
             if (process.env.BTTC_CONTRACT_ADDRESS) {
@@ -123,6 +127,79 @@ class BlockchainService {
             console.error('Error obteniendo info del documento:', error);
             throw error;
         }
+    }
+
+    /**
+     * Verifica un pago de suscripción directamente en la blockchain.
+     * Valida: formato del hash, existencia, confirmación, emisor, receptor y monto.
+     * @param {string} transactionHash - Hash de la transacción de pago reportada
+     * @param {number} requiredAmountBTT - Monto mínimo exigido según Settings
+     * @param {string} payerAddress - Wallet que debe haber enviado el pago
+     * @returns {Promise<object>} { valid, reason?, from?, to?, amountBTT?, blockNumber?, blockTimestamp? }
+     */
+    async verifySubscriptionPayment(transactionHash, requiredAmountBTT, payerAddress) {
+        if (!this.provider) {
+            throw new Error('Provider no inicializado');
+        }
+
+        if (!this.serviceWallet) {
+            throw new Error('Cuenta de cobro no configurada (BTTC_SERVICE_WALLET o BTTC_PRIVATE_KEY)');
+        }
+
+        if (typeof transactionHash !== 'string' || !/^0x[0-9a-fA-F]{64}$/.test(transactionHash.trim())) {
+            return { valid: false, reason: 'El hash de transacción no tiene un formato válido' };
+        }
+
+        const hash = transactionHash.trim();
+        const tx = await this.provider.getTransaction(hash).catch(() => null);
+
+        if (!tx) {
+            return { valid: false, reason: 'La transacción no existe en la blockchain' };
+        }
+
+        const receipt = await this.provider.getTransactionReceipt(hash).catch(() => null);
+
+        if (!receipt) {
+            return { valid: false, reason: 'La transacción aún no está confirmada en la blockchain' };
+        }
+
+        if (receipt.status !== 1) {
+            return { valid: false, reason: 'La transacción fue revertida (fallida) en la blockchain' };
+        }
+
+        if (payerAddress && tx.from?.toLowerCase() !== payerAddress.toLowerCase()) {
+            return { valid: false, reason: 'El pago no fue enviado desde la wallet del usuario' };
+        }
+
+        if (!tx.to || tx.to.toLowerCase() !== this.serviceWallet.toLowerCase()) {
+            return { valid: false, reason: 'El pago no fue enviado a la cuenta de cobro autorizada' };
+        }
+
+        const requiredWei = ethers.parseEther(String(requiredAmountBTT));
+
+        if (tx.value < requiredWei) {
+            const paidBTT = ethers.formatEther(tx.value);
+            return {
+                valid: false,
+                reason: `Monto insuficiente en blockchain: ${paidBTT} BTT pagados, se requieren ${requiredAmountBTT} BTT`
+            };
+        }
+
+        let blockTimestamp = null;
+        if (receipt.blockNumber) {
+            const block = await this.provider.getBlock(receipt.blockNumber).catch(() => null);
+            blockTimestamp = block ? new Date(block.timestamp * 1000) : null;
+        }
+
+        return {
+            valid: true,
+            transactionHash: hash,
+            from: tx.from.toLowerCase(),
+            to: tx.to.toLowerCase(),
+            amountBTT: Number(ethers.formatEther(tx.value)),
+            blockNumber: receipt.blockNumber,
+            blockTimestamp
+        };
     }
 
     /**

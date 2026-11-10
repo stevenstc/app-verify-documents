@@ -84,7 +84,7 @@ Una aplicación completa para verificar y certificar documentos usando blockchai
 ### 1. Clonar el Repositorio
 
 ```bash
-git clone https://github.com/tu-usuario/app-verify-documents.git
+git clone https://github.com/stevenstc/app-verify-documents.git
 cd app-verify-documents
 ```
 

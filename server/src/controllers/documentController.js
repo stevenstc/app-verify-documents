@@ -162,6 +162,54 @@ export const storeInBlockchain = async (req, res) => {
 };
 
 /**
+ * Actualiza la descripción de un documento del usuario
+ */
+export const updateDocumentDescription = async (req, res) => {
+    try {
+        const { documentId } = req.params;
+        const { walletAddress, description } = req.body;
+
+        if (!walletAddress) {
+            return res.status(400).json({ error: 'Wallet address es requerida' });
+        }
+
+        if (typeof description !== 'string') {
+            return res.status(400).json({ error: 'La descripción debe ser texto' });
+        }
+
+        if (description.length > 1000) {
+            return res.status(400).json({ error: 'La descripción no puede superar 1000 caracteres' });
+        }
+
+        const document = await Document.findById(documentId);
+
+        if (!document) {
+            return res.status(404).json({ error: 'Documento no encontrado' });
+        }
+
+        if (document.owner !== walletAddress.toLowerCase()) {
+            return res.status(403).json({ error: 'No tienes permiso para editar este documento' });
+        }
+
+        document.description = description.trim();
+        await document.save();
+
+        res.json({
+            message: 'Descripción actualizada exitosamente',
+            document: {
+                id: document._id,
+                fileName: document.fileName,
+                description: document.description,
+                updatedAt: document.updatedAt
+            }
+        });
+    } catch (error) {
+        console.error('Error actualizando descripción:', error);
+        res.status(500).json({ error: 'Error actualizando la descripción del documento' });
+    }
+};
+
+/**
  * Verifica un documento por su hash
  */
 export const verifyDocument = async (req, res) => {

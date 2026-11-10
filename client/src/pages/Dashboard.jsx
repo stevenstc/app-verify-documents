@@ -1,20 +1,29 @@
 import { useState, useEffect } from 'react';
 import { useWeb3 } from '../context/Web3Context';
-import { Upload, FileCheck, User, LogOut, Wallet } from 'lucide-react';
+import { ethers } from 'ethers';
+import { FileCheck, User, LogOut, Wallet, Pencil, Check, X } from 'lucide-react';
 import {
     uploadDocument,
     storeInBlockchain,
+    updateDocumentDescription,
     getUserDocuments,
     checkSubscription,
     updateSubscription,
     getUserLimits,
-    getUserOrCreate
+    getUserOrCreate,
+    getPricing,
+    checkAdminAccess
 } from '../services/api';
 import { calculateFileHash, formatHash, copyToClipboard } from '../utils/hashUtils';
+import AdminPanel from './AdminPanel';
+
+const formatDate = (date) => date
+    ? new Date(date).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '-';
 
 const Dashboard = () => {
-    const { account, connectWallet, disconnectWallet, isConnected, getBalance } = useWeb3();
-    const [activeTab, setActiveTab] = useState('upload');
+    const { account, connectWallet, disconnectWallet, isConnected, getBalance, signer, chainId, switchToBTTChain } = useWeb3();
+    const [isAdmin, setIsAdmin] = useState(false);
     const [file, setFile] = useState(null);
     const [description, setDescription] = useState('');
     const [uploading, setUploading] = useState(false);
@@ -23,11 +32,45 @@ const Dashboard = () => {
     const [balance, setBalance] = useState('0');
     const [message, setMessage] = useState({ type: '', text: '' });
     const [userLimits, setUserLimits] = useState(null);
+    const [pricing, setPricing] = useState(null);
+    const [paymentAddress, setPaymentAddress] = useState(null);
+    const [showPayModal, setShowPayModal] = useState(false);
+    const [paying, setPaying] = useState(false);
+    const [payStep, setPayStep] = useState('');
+    const [payError, setPayError] = useState('');
+    const [editingDocId, setEditingDocId] = useState(null);
+    const [editingDescription, setEditingDescription] = useState('');
+    const [savingDescription, setSavingDescription] = useState(false);
+
+    const subscriptionPriceLabel = pricing
+        ? `${Number(pricing.monthlyPriceBTT).toLocaleString('es-ES')} BTT / ${pricing.durationDays} días`
+        : '1000 BTT/mes';
 
     useEffect(() => {
         if (isConnected && account) {
             loadUserData();
         }
+    }, [isConnected, account]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        if (!isConnected || !account) {
+            setIsAdmin(false);
+            return;
+        }
+
+        checkAdminAccess(account.toLowerCase())
+            .then(access => {
+                if (!cancelled) setIsAdmin(!!access.isAdmin);
+            })
+            .catch(() => {
+                if (!cancelled) setIsAdmin(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
     }, [isConnected, account]);
 
     const loadUserData = async () => {
@@ -38,17 +81,20 @@ const Dashboard = () => {
             await getUserOrCreate(normalizedAccount);
 
             // Luego cargar todos los datos
-            const [docsData, subData, bal, limits] = await Promise.all([
+            const [docsData, subData, bal, limits, pricingData] = await Promise.all([
                 getUserDocuments(normalizedAccount),
                 checkSubscription(normalizedAccount),
                 getBalance(),
-                getUserLimits(normalizedAccount)
+                getUserLimits(normalizedAccount),
+                getPricing()
             ]);
 
             setDocuments(docsData.documents || []);
             setSubscription(subData);
             setBalance(bal);
             setUserLimits(limits);
+            setPricing(pricingData.pricing);
+            setPaymentAddress(pricingData.paymentAddress || null);
         } catch (error) {
             console.error('Error cargando datos:', error);
         }
@@ -141,32 +187,122 @@ const Dashboard = () => {
         }
     };
 
-    const handleSubscribe = async () => {
+    const handleStartEditDescription = (document) => {
+        setEditingDocId(document.id);
+        setEditingDescription(document.description || '');
+    };
+
+    const handleCancelEditDescription = () => {
+        setEditingDocId(null);
+        setEditingDescription('');
+    };
+
+    const handleSaveDescription = async (documentId) => {
         try {
+            setSavingDescription(true);
             setMessage({ type: '', text: '' });
 
-            // Aquí iría la lógica para procesar el pago en BTT
-            // Por ahora simularemos una transacción exitosa
-
-            const txHash = '0x' + Math.random().toString(36).substring(2, 15);
-
-            await updateSubscription(account.toLowerCase(), {
-                transactionHash: txHash,
-                amountBTT: 1000
+            const result = await updateDocumentDescription(documentId, {
+                walletAddress: account.toLowerCase(),
+                description: editingDescription
             });
 
-            setMessage({
-                type: 'success',
-                text: 'Suscripción activada exitosamente'
-            });
+            setDocuments(prev => prev.map(document =>
+                document.id === documentId
+                    ? { ...document, description: result.document.description }
+                    : document
+            ));
 
-            loadUserData();
+            setEditingDocId(null);
+            setEditingDescription('');
+            setMessage({ type: 'success', text: 'Descripción actualizada exitosamente' });
         } catch (error) {
-            console.error('Error activando suscripción:', error);
+            console.error('Error actualizando descripción:', error);
             setMessage({
                 type: 'error',
-                text: 'Error al activar la suscripción'
+                text: error.response?.data?.error || 'Error actualizando la descripción'
             });
+        } finally {
+            setSavingDescription(false);
+        }
+    };
+
+    const handleSubscribe = () => {
+        setPayError('');
+        setShowPayModal(true);
+    };
+
+    const closePayModal = () => {
+        if (paying) return;
+        setShowPayModal(false);
+        setPayError('');
+    };
+
+    const previewDates = () => {
+        const start = new Date();
+        const currentEnd = subscription?.subscription?.endDate
+            ? new Date(subscription.subscription.endDate)
+            : null;
+        const isActiveNow = subscription?.isActive && currentEnd && currentEnd > start;
+        const base = isActiveNow ? currentEnd : start;
+        const days = pricing?.durationDays ?? 30;
+        const end = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+        return { start, end, extended: !!isActiveNow };
+    };
+
+    const handleConfirmPayment = async () => {
+        if (!signer || !paymentAddress || !pricing?.monthlyPriceBTT) {
+            setPayError('No hay wallet conectada o el servicio de cobro no está configurado.');
+            return;
+        }
+
+        if (chainId !== '199' && chainId !== '1029') {
+            try {
+                await switchToBTTChain();
+            } catch {
+                setPayError('No fue posible cambiar a la red BTTChain. Conéctala manualmente en MetaMask.');
+            }
+            return;
+        }
+
+        try {
+            setPaying(true);
+            setPayError('');
+
+            setPayStep('Esperando tu confirmación en MetaMask...');
+            const tx = await signer.sendTransaction({
+                to: paymentAddress,
+                value: ethers.parseEther(String(pricing.monthlyPriceBTT))
+            });
+
+            setPayStep('Enviando pago a la blockchain...');
+            const receipt = await tx.wait();
+
+            if (receipt.status !== 1) {
+                throw new Error('La transacción fue revertida en la blockchain');
+            }
+
+            setPayStep('Verificando pago en la blockchain...');
+            const result = await updateSubscription(account.toLowerCase(), {
+                transactionHash: receipt.hash
+            });
+
+            setShowPayModal(false);
+            setMessage({
+                type: 'success',
+                text: `${result.message}. Vigente desde ${formatDate(result.subscription.startDate)} hasta ${formatDate(result.subscription.endDate)} (TX: ${formatHash(receipt.hash)})`
+            });
+            loadUserData();
+        } catch (error) {
+            console.error('Error al pagar suscripción:', error);
+            if (error.code === 4001 || /rejected|user denied|cancelado/i.test(error.message || '')) {
+                setPayError('Cancelaste la transacción en MetaMask. No se realizó ningún pago.');
+            } else {
+                setPayError(error.response?.data?.error || error.message || 'Error al procesar el pago');
+            }
+        } finally {
+            setPaying(false);
+            setPayStep('');
         }
     };
 
@@ -248,7 +384,7 @@ const Dashboard = () => {
                         </p>
                         {userLimits.remaining === 0 && (
                             <button onClick={handleSubscribe} className="btn btn-primary">
-                                Suscribirse (1000 BTT/mes) - Documentos ilimitados
+                                Suscribirse ({subscriptionPriceLabel}) - Documentos ilimitados
                             </button>
                         )}
                     </div>
@@ -261,7 +397,7 @@ const Dashboard = () => {
                             💎 Obtén acceso ilimitado: Suscríbete para certificar documentos sin límites.
                         </p>
                         <button onClick={handleSubscribe} className="btn btn-primary">
-                            Suscribirse (1000 BTT/mes)
+                            Suscribirse ({subscriptionPriceLabel})
                         </button>
                     </div>
                 )}
@@ -269,8 +405,17 @@ const Dashboard = () => {
                 {subscription && subscription.isActive && (
                     <div className="subscription-alert alert alert-success">
                         <p>
-                            ✓ Suscripción activa - Documentos ilimitados. Días restantes: {subscription.daysRemaining}
+                            ✓ Suscripción activa - Documentos ilimitados.<br />
+                            Vigente desde: <strong>{formatDate(subscription.subscription?.startDate)}</strong> ·
+                            Vence: <strong>{formatDate(subscription.subscription?.endDate)}</strong> ·
+                            Días restantes: <strong>{subscription.daysRemaining}</strong>
+                            {subscription.daysRemaining <= 5 && (
+                                <> · ⚠️ Tu suscripción está por vencer</>
+                            )}
                         </p>
+                        <button onClick={handleSubscribe} className="btn btn-outline btn-sm">
+                            Renovar ({subscriptionPriceLabel})
+                        </button>
                     </div>
                 )}
 
@@ -281,27 +426,8 @@ const Dashboard = () => {
                     </div>
                 )}
 
-                {/* Tabs */}
-                <div className="tabs">
-                    <button
-                        className={`tab ${activeTab === 'upload' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('upload')}
-                    >
-                        <Upload size={20} />
-                        Cargar Documento
-                    </button>
-                    <button
-                        className={`tab ${activeTab === 'documents' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('documents')}
-                    >
-                        <FileCheck size={20} />
-                        Mis Documentos
-                    </button>
-                </div>
-
-                {/* Upload Tab */}
-                {activeTab === 'upload' && (
-                    <div className="tab-content card">
+                {/* Upload */}
+                <div className="tab-content card">
                         <h2>Cargar Nuevo Documento</h2>
                         <div className="form-group">
                             <label className="form-label">Seleccionar Archivo</label>
@@ -342,12 +468,10 @@ const Dashboard = () => {
                                 ⚠️ Has alcanzado el límite de documentos gratuitos. Suscríbete para continuar.
                             </p>
                         )}
-                    </div>
-                )}
+                </div>
 
-                {/* Documents Tab */}
-                {activeTab === 'documents' && (
-                    <div className="tab-content">
+                {/* Documents */}
+                <div className="documents-section">
                         <h2>Mis Documentos ({documents.length})</h2>
 
                         {documents.length === 0 ? (
@@ -371,8 +495,51 @@ const Dashboard = () => {
                                             <p><strong>Tamaño:</strong> {(doc.fileSize / 1024).toFixed(2)} KB</p>
                                             <p><strong>Fecha:</strong> {new Date(doc.createdAt).toLocaleDateString()}</p>
 
-                                            {doc.description && (
-                                                <p><strong>Descripción:</strong> {doc.description}</p>
+                                            {editingDocId === doc.id ? (
+                                                <div className="description-edit">
+                                                    <label className="form-label">Descripción</label>
+                                                    <textarea
+                                                        className="form-input"
+                                                        rows="3"
+                                                        maxLength="1000"
+                                                        value={editingDescription}
+                                                        onChange={(e) => setEditingDescription(e.target.value)}
+                                                        placeholder="Escribe una descripción para este documento..."
+                                                    />
+                                                    <div className="description-actions">
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-primary btn-sm"
+                                                            onClick={() => handleSaveDescription(doc.id)}
+                                                            disabled={savingDescription}
+                                                        >
+                                                            <Check size={14} />
+                                                            {savingDescription ? 'Guardando...' : 'Guardar'}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="btn btn-outline btn-sm"
+                                                            onClick={handleCancelEditDescription}
+                                                            disabled={savingDescription}
+                                                        >
+                                                            <X size={14} />
+                                                            Cancelar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p>
+                                                    <strong>Descripción:</strong>{' '}
+                                                    {doc.description || <span className="text-muted">Sin descripción</span>}
+                                                    <button
+                                                        type="button"
+                                                        className="edit-description-btn"
+                                                        onClick={() => handleStartEditDescription(doc)}
+                                                    >
+                                                        <Pencil size={14} />
+                                                        Editar
+                                                    </button>
+                                                </p>
                                             )}
 
                                             {doc.blockchainTxHash && (
@@ -401,8 +568,75 @@ const Dashboard = () => {
                                 ))}
                             </div>
                         )}
+                </div>
+
+                {/* Payment confirmation modal */}
+                {showPayModal && pricing && (
+                    <div className="modal-overlay" onClick={closePayModal}>
+                        <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+                            <h2>Confirmar pago de suscripción</h2>
+
+                            <div className="pay-summary">
+                                <p><strong>Plan:</strong> {pricing.planName}</p>
+                                <p><strong>Monto:</strong> {Number(pricing.monthlyPriceBTT).toLocaleString('es-ES')} BTT</p>
+                                <p><strong>Duración:</strong> {pricing.durationDays} días</p>
+                                <p><strong>Inicio:</strong> {formatDate(previewDates().start)}</p>
+                                <p><strong>Vencimiento:</strong> {formatDate(previewDates().end)}</p>
+                                {previewDates().extended && (
+                                    <p className="pay-extended">
+                                        Se extiende tu suscripción vigente desde {formatDate(subscription.subscription.endDate)}.
+                                    </p>
+                                )}
+                                <p><strong>Cuenta de cobro:</strong></p>
+                                <p className="pay-address">
+                                    <span>{paymentAddress ? `${paymentAddress.slice(0, 10)}...${paymentAddress.slice(-8)}` : 'No configurada'}</span>
+                                    {paymentAddress && (
+                                        <button
+                                            type="button"
+                                            className="edit-description-btn"
+                                            onClick={() => copyToClipboard(paymentAddress)}
+                                        >
+                                            <Pencil size={14} />
+                                            Copiar
+                                        </button>
+                                    )}
+                                </p>
+                            </div>
+
+                            <p className="limit-warning">
+                                MetaMask te pedirá confirmar el envío de {Number(pricing.monthlyPriceBTT).toLocaleString('es-ES')} BTT
+                                desde tu wallet ({formatHash(account, 6)}). El pago se verificará en la blockchain antes de
+                                activar la suscripción; no se activa ninguna suscripción sin un pago real y verificado.
+                            </p>
+
+                            {payError && (
+                                <div className="alert alert-error">{payError}</div>
+                            )}
+
+                            {payStep && (
+                                <div className="alert alert-info">{payStep}</div>
+                            )}
+
+                            <div className="modal-actions">
+                                <button onClick={closePayModal} className="btn btn-outline" disabled={paying}>
+                                    <X size={18} />
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleConfirmPayment}
+                                    className="btn btn-primary"
+                                    disabled={paying || !signer || !paymentAddress}
+                                >
+                                    <Wallet size={18} />
+                                    {paying ? 'Procesando...' : `Pagar ${Number(pricing.monthlyPriceBTT).toLocaleString('es-ES')} BTT`}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 )}
+
+                {/* Admin panel inline for administrator wallets */}
+                {isAdmin && <AdminPanel embedded />}
             </div>
 
             <style jsx>{`
@@ -560,6 +794,44 @@ const Dashboard = () => {
 
         .document-info strong {
           color: var(--dark);
+        }
+
+        .description-edit {
+          margin: 10px 0;
+        }
+
+        .description-edit textarea {
+          margin-top: 6px;
+          resize: vertical;
+        }
+
+        .description-actions {
+          display: flex;
+          gap: 8px;
+          margin-top: 8px;
+        }
+
+        .edit-description-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          margin-left: 8px;
+          padding: 0;
+          border: none;
+          background: none;
+          color: var(--primary);
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .edit-description-btn:hover {
+          text-decoration: underline;
+        }
+
+        .text-muted {
+          color: var(--text-light);
+          font-style: italic;
         }
 
         .document-info a {

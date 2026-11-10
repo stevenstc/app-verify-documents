@@ -5,12 +5,14 @@ import {
     checkSubscription,
     updateProfile,
     getBalance,
-    getUserLimits
+    getUserLimits,
+    getPricing
 } from '../controllers/userController.js';
 
 const router = express.Router();
 
 // Rutas
+router.get('/pricing', getPricing);
 router.get('/:walletAddress', getUserOrCreate);
 router.post('/:walletAddress/subscription', updateSubscription);
 router.get('/:walletAddress/subscription/status', checkSubscription);

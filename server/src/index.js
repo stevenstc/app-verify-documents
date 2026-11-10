@@ -5,6 +5,7 @@ import connectDB from './config/database.js';
 import blockchainService from './services/blockchainService.js';
 import documentRoutes from './routes/documentRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -24,6 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 // Rutas
 app.use('/api/documents', documentRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Ruta raíz
 app.get('/', (req, res) => {
@@ -32,7 +34,8 @@ app.get('/', (req, res) => {
         version: '1.0.0',
         endpoints: {
             documents: '/api/documents',
-            users: '/api/users'
+            users: '/api/users',
+            admin: '/api/admin'
         }
     });
 });

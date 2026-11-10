@@ -4,6 +4,7 @@ import Navbar from './components/Navbar';
 import LandingPage from './pages/LandingPage';
 import Dashboard from './pages/Dashboard';
 import VerifyPage from './pages/VerifyPage';
+import AdminPanel from './pages/AdminPanel';
 import './styles/index.css';
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
                         <Route path="/" element={<LandingPage />} />
                         <Route path="/dashboard" element={<Dashboard />} />
                         <Route path="/verify" element={<VerifyPage />} />
+                        <Route path="/admin" element={<AdminPanel />} />
                     </Routes>
                     <footer className="footer">
                         <div className="container">

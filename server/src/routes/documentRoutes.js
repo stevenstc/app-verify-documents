@@ -5,7 +5,8 @@ import {
     storeInBlockchain,
     verifyDocument,
     getUserDocuments,
-    verifyUploadedFile
+    verifyUploadedFile,
+    updateDocumentDescription
 } from '../controllers/documentController.js';
 
 const router = express.Router();
@@ -22,6 +23,7 @@ const upload = multer({
 // Rutas
 router.post('/upload', upload.single('file'), uploadDocument);
 router.post('/:documentId/store-blockchain', storeInBlockchain);
+router.put('/:documentId', updateDocumentDescription);
 router.get('/verify/:hash', verifyDocument);
 router.get('/user/:walletAddress', getUserDocuments);
 router.post('/verify-file', upload.single('file'), verifyUploadedFile);
